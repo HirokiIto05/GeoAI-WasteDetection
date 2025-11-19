@@ -18,6 +18,7 @@ model = YOLO("yolo11n-cls.pt")  # small model
 ```
 
 ```{python}
+#| eval: false
 # Train the model
 model.train(
   data=dir_data,    # The parent directory containing train/val folders
@@ -36,25 +37,6 @@ model.train(
 model = YOLO("runs/cls/waste_cls/weights/best.pt")
 ```
 
-```{python}
-test_images = [f for f in os.listdir(here("01_data/raw/images/test/waste/")) if f.endswith('.tif')]
-```
-
-```{python}
-# dir_test = here("01_data/test/images/test")
-results = model.val(data=dir_data)
-```
-
-```{python}
-model("/Users/ito_hiroki/05.Lecture/GeoAI/GeoAI/04_model/r942_c631/27b50fd2-c424-4721-a20f-8b79adb722b0-0.png")
-```
-
-```{python}
-print(results)
-```
-
-
-
 # Check Results
 
 ### Change the test image from tif to png 
@@ -64,6 +46,8 @@ When testing individual images, tif files gave an error, so I changed them to pn
 
 ### Check if the prediction is correct
 The code checks if the predicted class matches the actual class (folder name) and stores the result in is_correct as True or False.
+
+### Calculate F1 Score
 
 ```{python}
 dir_test_waste = here("01_data/intermediate/test_images/waste/")
@@ -81,8 +65,8 @@ list_test_non_waste = [f for f in os.listdir(dir_test_non_waste) if f.endswith('
 
 ```{python}
 # List to store the results
-results_list = []
 def check_prediction(list_image_path, is_waste_i) :
+  results_list = []
 
   if is_waste_i:
       folder_name_i = "waste"
@@ -128,23 +112,41 @@ df_results_waste = pd.DataFrame(results_waste, columns=["file_name", "actual", "
 df_results_non_waste = pd.DataFrame(results_non_waste, columns=["file_name", "actual", "prediction", "is_correct"])
 ```
 
+```{python}
+df_results_waste
+```
+
 
 ```{python}
+def calculate_f1_score(df_resuts_waste, df_results_non_waste) :
 
-def summary_results(df_results):
-  summary = df_results.groupby('actual').agg(
-    total=('file_name', 'count'),
-    correct=('is_correct', 'sum')
-  ).reset_index()
-  summary['error_rate'] = (1 - summary['correct'] / summary['total']).round(4)
+  df_true_positive = df_results_waste[df_results_waste['is_correct'] == True]
+  df_false_negative = df_results_waste[df_results_waste['is_correct'] == False]
   
+  df_false_positive = df_results_non_waste[df_results_non_waste['is_correct'] == False]
+  df_true_negative = df_results_non_waste[df_results_non_waste['is_correct'] == True]
+
+  true_positive = len(df_true_positive)
+  false_negative = len(df_false_negative)
+  false_positive = len(df_false_positive)
+  true_negative = len(df_true_negative)
+  
+  precision = true_positive / (true_positive + false_positive) 
+  recall = true_positive / (true_positive + false_negative) 
+
+  f1_score = 2 * (precision * recall) / (precision + recall)
+
   overall = {
-    'actual': 'overall',
-    'total': int(summary['total'].sum()),
-    'correct': int(summary['correct'].sum()),
-    'error_rate': round(1 - summary['correct'].sum() / summary['total'].sum(), 4)
+    "precision": precision,
+    "recall": recall,
+    "f1_score": f1_score  
   }
-  summary = pd.concat([summary, pd.DataFrame([overall])], ignore_index=True)
-  
-  print(summary.to_string(index=False))
+
+  summary = pd.DataFrame([overall])
+  return summary
+```
+
+
+```{python}
+calculate_f1_score(df_results_waste, df_results_non_waste)
 ```
