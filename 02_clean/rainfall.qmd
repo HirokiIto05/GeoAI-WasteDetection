@@ -6,18 +6,20 @@ import xarray as xr
 # from scipy.io import netcdf
 import pandas as pd
 import numpy as np
+
+from pyprojroot.here import here
 ```
 
 
 ```{python}
-# 1. ERA5-Land からデータをダウンロード（Copernicus API）
+# 1. Download data from ERA5-Land (Copernicus API)
 client = cdsapi.Client()
 
 dataset = "reanalysis-era5-land"
 request = {
     "variable": ["total_precipitation"],
     "year": "2025",
-    "month": "05",
+    "month": "10",
     "day": [
         "01", "02", "03",
         "04", "05", "06",
@@ -32,7 +34,7 @@ request = {
         "31"
     ],
     # "day": [f"{d:02d}" for d in range(1, 32)],
-    "time": [f"{h:02d}:00" for h in range(24)],  # 00:00〜23:00
+    "time": [f"{h:02d}:00" for h in range(24)],  # 00:00-23:00
     # "time": ["09:00"],
     "data_format": "netcdf",
     "download_format": "unarchived",
@@ -44,39 +46,40 @@ client.retrieve(dataset, request).download()
 
 
 ```{python}
-# 2. 読み込みと日積算
-ds = xr.open_dataset('8226147e949833b3460e6bfa18aabea1.nc')
-prec = ds['tp'] * 1000  # m → mm
-# すでに日毎データなのでresampleは不要
+# 2. Read and daily accumulation
+# ds = xr.open_dataset('../01.data/precipitation/day/2025_10.nc')
+ds = xr.open_dataset(here('01.data/precipitation/day/2025_10.nc'))
+prec = ds['tp'] * 1000  # m to mm
+# Data is already daily, so resample is not needed
 prec_daily = prec
 ```
 
 ```{python}
-ds = xr.open_dataset('2025_04.nc')
-tp = ds["tp"] * 1000.0  # m → mm
+ds = xr.open_dataset(here('01.data/precipitation/day/2025_10.nc'))
+tp = ds["tp"] * 1000.0  # m to mm
 
-# bbox内を空間平均（lat, lon 次元名はデータによって 'latitude','longitude'）
+# Spatial average within bbox (dimension names may be 'latitude','longitude' depending on data)
 tp_mean = tp.mean(dim=["latitude","longitude"])
 
-# 日合計を計算（1時間値の合計）
+# Calculate daily total (sum of hourly values)
 tp_daily = tp_mean.resample(valid_time="1D").sum()
 tp_daily
-# 雨日フラグ（微小値を切り捨て）
-rain_day = (tp_daily > 1)  # 1 mm/day 以上を「降雨あり」と判定
-df
+# Rainy day flag (ignore small values)
+rain_day = (tp_daily > 1)  # Consider as rain if >= 1 mm/day
+
 df = pd.DataFrame({
     "date": tp_daily["valid_time"].values,
     "rain_mm_day": tp_daily.values,
     "rain_flag": rain_day.values.astype(int)
 })
-df
+
 print(df.head())
 ```
 
 
 
 ```{python}
-# 3. イベント抽出
+# 3. Event extraction
 threshold = 30  # mm/day
 rain = prec_daily.mean(dim=['latitude', 'longitude'])
 df = rain.to_dataframe().reset_index().rename(columns={'tp': 'rain_mm'})
@@ -86,12 +89,12 @@ df = rain.to_dataframe().reset_index().rename(columns={'tp': 'rain_mm'})
 
 ```{python}
 
-# 連続降雨イベントIDを付与
+# Assign consecutive rainfall event IDs
 df['event'] = (df['rain_mm'] > threshold).astype(int)
 df['event_id'] = (df['event'].diff() == 1).cumsum()
 df.loc[df['event'] == 0, 'event_id'] = np.nan
 
-# # 4. 出力
+# # 4. Output
 # events = df[df['event'] == 1].groupby('event_id').agg(
 #     start=('time', 'min'),
 #     end=('time', 'max'),

@@ -4,3 +4,7 @@ docker-compose.yml
 .devcontainer/
 
 *.DS_Store
+*.tif
+*.png
+*.nc
+*.jpg

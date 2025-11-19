@@ -1,0 +1,150 @@
+```{python}
+# !pip install ultralytics
+```
+
+```{python}
+import pandas as pd
+from ultralytics import YOLO
+
+from pyprojroot.here import here
+```
+
+```{python}
+dir_data = here("01_data/raw/images/")
+```
+
+```{python}
+model = YOLO("yolo11n-cls.pt")  # small model
+```
+
+```{python}
+# Train the model
+model.train(
+  data=dir_data,    # The parent directory containing train/val folders
+  epochs=30,        # Number of epochs to train
+  imgsz=224,        # Image size (resize images to this size)
+  batch=32,         # Batch size
+  project="runs/cls",  # Location to save the results
+  name="waste_cls"     # Subdirectory name for this training session
+)
+
+```
+
+
+```{python}
+# Load the trained model
+model = YOLO("runs/cls/waste_cls/weights/best.pt")
+```
+
+```{python}
+test_images = [f for f in os.listdir(here("01_data/raw/images/test/waste/")) if f.endswith('.tif')]
+```
+
+```{python}
+# dir_test = here("01_data/test/images/test")
+results = model.val(data=dir_data)
+```
+
+```{python}
+model("/Users/ito_hiroki/05.Lecture/GeoAI/GeoAI/04_model/r942_c631/27b50fd2-c424-4721-a20f-8b79adb722b0-0.png")
+```
+
+```{python}
+print(results)
+```
+
+
+
+# Check Results
+
+### Change the test image from tif to png 
+
+When testing individual images, tif files gave an error, so I changed them to png.
+'01_data/intermediate/test_images'
+
+### Check if the prediction is correct
+The code checks if the predicted class matches the actual class (folder name) and stores the result in is_correct as True or False.
+
+```{python}
+dir_test_waste = here("01_data/intermediate/test_images/waste/")
+dir_test_non_waste = here("01_data/intermediate/test_images/non_waste/")
+```
+
+
+```{python}
+# Get the list of test image files (either .jpg or .png)
+list_test_waste = [f for f in os.listdir(dir_test_waste) if f.endswith('.png')]
+
+list_test_non_waste = [f for f in os.listdir(dir_test_non_waste) if f.endswith('.png')]
+
+```
+
+```{python}
+# List to store the results
+results_list = []
+def check_prediction(list_image_path, is_waste_i) :
+
+  if is_waste_i:
+      folder_name_i = "waste"
+  else:
+      folder_name_i = "non_waste"
+  
+  base_path = here(f"01_data/intermediate/test_images/{folder_name_i}/")
+
+  for image_name in list_image_path:
+
+      image_path = os.path.join(base_path, image_name)
+
+      # Perform inference on the image
+      results = model(image_path)
+
+      # Get the results from the inference
+      r = results[0]  # Inference result
+      top1 = r.probs.top1  # Index of the predicted class
+      conf = r.probs.top1conf  # Confidence score of the prediction
+      label = r.names[top1]  # Predicted class name
+
+      # Check if the prediction is correct
+      is_correct = label == folder_name_i  # True if prediction matches the actual label
+
+      # Append the result to the list
+      results_list.append([image_name, folder_name_i, label, is_correct])
+  
+  return results_list
+```
+
+
+```{python}
+results_waste = check_prediction(list_test_waste, is_waste_i=True)
+results_non_waste = check_prediction(list_test_non_waste, is_waste_i=False)
+```
+
+```{python}
+# Convert the list of results into a DataFrame
+df_results_waste = pd.DataFrame(results_waste, columns=["file_name", "actual", "prediction", "is_correct"])
+```
+
+```{python}
+df_results_non_waste = pd.DataFrame(results_non_waste, columns=["file_name", "actual", "prediction", "is_correct"])
+```
+
+
+```{python}
+
+def summary_results(df_results):
+  summary = df_results.groupby('actual').agg(
+    total=('file_name', 'count'),
+    correct=('is_correct', 'sum')
+  ).reset_index()
+  summary['error_rate'] = (1 - summary['correct'] / summary['total']).round(4)
+  
+  overall = {
+    'actual': 'overall',
+    'total': int(summary['total'].sum()),
+    'correct': int(summary['correct'].sum()),
+    'error_rate': round(1 - summary['correct'].sum() / summary['total'].sum(), 4)
+  }
+  summary = pd.concat([summary, pd.DataFrame([overall])], ignore_index=True)
+  
+  print(summary.to_string(index=False))
+```
